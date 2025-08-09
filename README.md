@@ -9,6 +9,7 @@ data class MyOptions(
     val otherNested: MyOtherNestedOptions = MyOtherNestedOptions(),
 )
 
+@Serializable
 sealed interface MyNestedOptions {
     @Serializable
     @SerialName("option-a")

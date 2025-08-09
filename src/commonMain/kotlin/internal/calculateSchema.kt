@@ -1,19 +1,18 @@
 package net.lsafer.optionkt.internal
 
-import kotlinx.serialization.SerialName
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.InternalSerializationApi
+import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.json.*
 import net.lsafer.optionkt.OptionDoc
-import kotlin.enums.EnumEntries
-import kotlin.reflect.KClass
-import kotlin.reflect.KType
-import kotlin.reflect.full.*
-import kotlin.reflect.jvm.javaGetter
-import kotlin.reflect.jvm.jvmErasure
-import kotlin.reflect.jvm.jvmName
+import net.lsafer.optionkt.OptionRef
+import java.security.MessageDigest
+import java.util.*
 
 @PublishedApi
 internal data class SchemaResult(
     val type: JsonObjectBuilder.() -> Unit,
+    val serialName: String? = null,
     val additionalTypes: Map<String, JsonObjectBuilder.() -> Unit> = emptyMap(),
     val immediateProperties: Map<String, JsonObjectBuilder.() -> Unit> = emptyMap(),
 )
@@ -33,20 +32,44 @@ internal fun SchemaResult.toSchemaObject(): JsonObject {
     }
 }
 
+@OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
 @PublishedApi
-internal fun calculateSchema(kType: KType): SchemaResult {
-    val kClass = kType.jvmErasure
+internal fun calculateSchema(descriptor: SerialDescriptor): SchemaResult {
+    if (descriptor.isNullable) {
+        val subDescriptor = descriptor.nonNullOriginal
+        val subSchema = calculateSchema(subDescriptor)
 
-    if (kClass == JsonObject::class) return SchemaResult({ put("type", "object") })
-    if (kClass == JsonArray::class) return SchemaResult({ put("type", "array") })
-    if (kClass == String::class) return SchemaResult({ put("type", "string") })
-    if (kClass == Regex::class) return SchemaResult({ put("type", "string") })
-    if (kClass == Boolean::class) return SchemaResult({ put("type", "boolean") })
-    if (kClass.isSubclassOf(Number::class)) return SchemaResult({ put("type", "number") })
+        return SchemaResult(
+            type = {
+                putJsonArray("oneOf") {
+                    addJsonObject {
+                        subSchema.type(this)
+                    }
+                    addJsonObject {
+                        put("type", "null")
+                    }
+                }
+            },
+            additionalTypes = subSchema.additionalTypes,
+            immediateProperties = subSchema.immediateProperties,
+        )
+    }
 
-    if (kClass.isSubclassOf(Map::class)) {
-        val subKType = kType.arguments[1].type!!
-        val subSchema = calculateSchema(subKType)
+    if (descriptor.serialName == "kotlinx.serialization.json.JsonObject") return SchemaResult({ put("type", "object") })
+    if (descriptor.serialName == "kotlinx.serialization.json.JsonArray") return SchemaResult({ put("type", "array") })
+    if (descriptor.kind == PrimitiveKind.BOOLEAN) return SchemaResult({ put("type", "boolean") })
+    if (descriptor.kind == PrimitiveKind.CHAR) return SchemaResult({ put("type", "string") })
+    if (descriptor.kind == PrimitiveKind.STRING) return SchemaResult({ put("type", "string") })
+    if (descriptor.kind == PrimitiveKind.BYTE) return SchemaResult({ put("type", "number") })
+    if (descriptor.kind == PrimitiveKind.SHORT) return SchemaResult({ put("type", "number") })
+    if (descriptor.kind == PrimitiveKind.INT) return SchemaResult({ put("type", "number") })
+    if (descriptor.kind == PrimitiveKind.LONG) return SchemaResult({ put("type", "number") })
+    if (descriptor.kind == PrimitiveKind.FLOAT) return SchemaResult({ put("type", "number") })
+    if (descriptor.kind == PrimitiveKind.DOUBLE) return SchemaResult({ put("type", "number") })
+
+    if (descriptor.kind == StructureKind.MAP) {
+        val subDescriptor = descriptor.getElementDescriptor(1)
+        val subSchema = calculateSchema(subDescriptor)
 
         return SchemaResult(
             type = {
@@ -59,9 +82,9 @@ internal fun calculateSchema(kType: KType): SchemaResult {
         )
     }
 
-    if (kClass.isSubclassOf(List::class) || kClass.isSubclassOf(Set::class)) {
-        val subKType = kType.arguments[0].type!!
-        val subSchema = calculateSchema(subKType)
+    if (descriptor.kind == StructureKind.LIST) {
+        val subDescriptor = descriptor.getElementDescriptor(0)
+        val subSchema = calculateSchema(subDescriptor)
 
         return SchemaResult(
             type = {
@@ -74,87 +97,128 @@ internal fun calculateSchema(kType: KType): SchemaResult {
         )
     }
 
-    if (kClass.isSubclassOf(Enum::class)) {
-        data class EnumSubInfo(val name: String)
+    if (descriptor.kind == SerialKind.ENUM) {
+        data class EnumSubInfo(val serialName: String)
 
-        val subInfoList = kClass.enumEntries().map { subEnum ->
-            val subSerialName = subEnum.findAnnotation<SerialName>()
-            val subName = subSerialName?.value ?: subEnum.name
+        val optionRef = descriptor.obtainOptionRef()
 
-            EnumSubInfo(name = subName)
-        }
+        val simpleClassName by lazy { descriptor.simpleClassNameOrNull() }
+        val md5Id by lazy { descriptor.md5Id() }
 
-        return SchemaResult({
-            put("type", "string")
-            putJsonArray("enum") {
-                subInfoList.forEach { subInfo ->
-                    add(subInfo.name)
-                }
-            }
-        })
-    }
+        val serialName = descriptor.serialName
+        val defRef = optionRef?.value ?: simpleClassName ?: md5Id
 
-    if (kClass.isValue) {
-        val subKType = kClass.primaryConstructor!!.parameters[0].type
-        val subSchema = calculateSchema(subKType)
+        val subInfoList = List(descriptor.elementsCount) { i ->
+            val subSerialName = descriptor.getElementName(i)
 
-        return subSchema
-    }
-
-    if (kClass.objectInstance != null) {
-        val serialName = kClass.findAnnotation<SerialName>()
-        val optionDocs = kClass.findAnnotations<OptionDoc>()
-        val ref = kClass.identifyingName()
-        val discriminator = serialName?.value
-
-        return SchemaResult({
-            put("type", "object")
-            put("title", ref)
-            put("additionalProperties", false)
-            putAll(optionDocs)
-
-            putJsonObject("properties") {
-                if (discriminator != null) {
-                    putJsonObject("type") {
-                        put("const", discriminator)
-                    }
-                }
-            }
-        })
-    }
-
-    if (kClass.isSealed) {
-        data class SealedSubInfo(val schema: SchemaResult)
-
-        val optionDocs = kClass.findAnnotations<OptionDoc>()
-        val ref = kClass.identifyingName()
-
-        val subInfoList = kClass.sealedSubclasses.map { subKClass ->
-            val subSchema = calculateSchema(subKClass.starProjectedType)
-
-            SealedSubInfo(schema = subSchema)
+            EnumSubInfo(serialName = subSerialName)
         }
 
         val additionalType: JsonObjectBuilder.() -> Unit = {
-            put("title", ref)
+            put("type", "string")
+            putJsonArray("enum") {
+                subInfoList.forEach { subInfo ->
+                    add(subInfo.serialName)
+                }
+            }
+        }
+
+        return SchemaResult(
+            type = { put($$"$ref", $$"#/$defs/$$defRef") },
+            serialName = serialName,
+            additionalTypes = buildMap {
+                put(defRef, additionalType)
+            },
+        )
+    }
+
+    if (descriptor.kind == StructureKind.OBJECT) {
+        val optionRef = descriptor.obtainOptionRef()
+        val optionDocs = descriptor.obtainOptionDocList()
+
+        val simpleClassName by lazy { descriptor.simpleClassNameOrNull() }
+        val md5Id by lazy { descriptor.md5Id() }
+
+        val serialName = descriptor.serialName
+        val title = optionRef?.value ?: simpleClassName ?: serialName
+        val defRef = optionRef?.value ?: simpleClassName ?: md5Id
+
+        val additionalType: JsonObjectBuilder.() -> Unit = {
+            put("type", "object")
+            put("title", title)
+            put("additionalProperties", false)
+            putAll(optionDocs)
+        }
+
+        return SchemaResult(
+            type = { put($$"$ref", $$"#/$defs/$$defRef") },
+            serialName = serialName,
+            additionalTypes = buildMap {
+                put(defRef, additionalType)
+            },
+        )
+    }
+
+    if (descriptor.kind == PolymorphicKind.SEALED) {
+        data class SealedSubInfo(val schema: SchemaResult)
+
+        val optionRef = descriptor.obtainOptionRef()
+        val optionDocs = descriptor.obtainOptionDocList()
+        val jsonClassDiscriminator = descriptor.obtainJsonClassDiscriminator()
+
+        val simpleClassName by lazy { descriptor.simpleClassNameOrNull() }
+        val md5Id by lazy { descriptor.md5Id() }
+
+        val serialName = descriptor.serialName
+        val title = optionRef?.value ?: simpleClassName ?: serialName
+        val defRef = optionRef?.value ?: simpleClassName ?: md5Id
+        val discriminator = jsonClassDiscriminator?.discriminator ?: "type"
+
+        val subInfoList = descriptor
+            .getElementDescriptor(1)
+            .elementDescriptors
+            .map { subDescriptor ->
+                val subSchema = calculateSchema(subDescriptor)
+
+                SealedSubInfo(schema = subSchema)
+            }
+
+        val additionalType: JsonObjectBuilder.() -> Unit = {
+            put("title", title)
             putAll(optionDocs)
 
             putJsonArray("oneOf") {
                 subInfoList.forEach { subInfo ->
                     addJsonObject {
-                        subInfo.schema.type(this)
+                        if (subInfo.schema.serialName == null) {
+                            subInfo.schema.type(this)
+                        } else {
+                            putJsonArray("allOf") {
+                                addJsonObject {
+                                    subInfo.schema.type(this)
+                                }
+                                addJsonObject {
+                                    putJsonArray("required") {
+                                        add(discriminator)
+                                    }
+                                    putJsonObject("properties") {
+                                        putJsonObject(discriminator) {
+                                            put("const", subInfo.schema.serialName)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
         return SchemaResult(
-            type = {
-                put($$"$ref", $$"#/$defs/$$ref")
-            },
+            type = { put($$"$ref", $$"#/$defs/$$defRef") },
+            serialName = serialName,
             additionalTypes = buildMap {
-                put(ref, additionalType)
-
+                put(defRef, additionalType)
                 subInfoList.forEach { subInfo ->
                     putAll(subInfo.schema.additionalTypes)
                 }
@@ -162,62 +226,91 @@ internal fun calculateSchema(kType: KType): SchemaResult {
         )
     }
 
-    if (kClass.isData) {
+    if (descriptor.kind == StructureKind.CLASS && descriptor.isInline) {
+        val optionRef = descriptor.obtainOptionRef()
+        val optionDocs = descriptor.obtainOptionDocList()
+
+        val simpleClassName by lazy { descriptor.simpleClassNameOrNull() }
+        val md5Id by lazy { descriptor.md5Id() }
+
+        val serialName = descriptor.serialName
+        val title = optionRef?.value ?: simpleClassName ?: serialName
+        val defRef = optionRef?.value ?: simpleClassName ?: md5Id
+
+        val subDescriptor = descriptor.getElementDescriptor(0)
+        val subSchema = calculateSchema(subDescriptor)
+
+        val additionalType: JsonObjectBuilder.() -> Unit = {
+            subSchema.type(this)
+            put("title", title)
+            putAll(optionDocs)
+        }
+
+        return SchemaResult(
+            type = { put($$"$ref", $$"#/$defs/$$defRef") },
+            serialName = serialName,
+            additionalTypes = buildMap {
+                put(defRef, additionalType)
+                putAll(subSchema.additionalTypes)
+            },
+            immediateProperties = subSchema.immediateProperties,
+        )
+    }
+
+    if (descriptor.kind == StructureKind.CLASS) {
         data class DataSubInfo(
-            val name: String,
+            val serialName: String,
             val isOptional: Boolean,
             val type: JsonObjectBuilder.() -> Unit,
             val additionalTypes: Map<String, JsonObjectBuilder.() -> Unit>,
             val immediateProperties: Map<String, JsonObjectBuilder.() -> Unit>,
         )
 
-        val serialName = kClass.findAnnotation<SerialName>()
-        val optionDocs = kClass.findAnnotations<OptionDoc>()
-        val discriminator = serialName?.value
-        val ref = kClass.identifyingName()
+        val optionRef = descriptor.obtainOptionRef()
+        val optionDocs = descriptor.obtainOptionDocList()
 
-        val subInfoList = kClass.primaryConstructor!!.parameters.map { subKParameter ->
-            val subSerialName = subKParameter.findAnnotation<SerialName>()
-            val subOptionDocs = subKParameter.findAnnotations<OptionDoc>()
-            val subName = subSerialName?.value ?: subKParameter.name!!
-            val subIsOptional = subKParameter.isOptional
-            val subKType = subKParameter.type
-            val subSchema = calculateSchema(subKType)
+        val simpleClassName by lazy { descriptor.simpleClassNameOrNull() }
+        val md5Id by lazy { descriptor.md5Id() }
+
+        val serialName = descriptor.serialName
+        val title = optionRef?.value ?: simpleClassName ?: serialName
+        val defRef = optionRef?.value ?: simpleClassName ?: md5Id
+
+        val subInfoList = List(descriptor.elementsCount) { i ->
+            val subOptionDocs = descriptor.obtainElementOptionDocList(i)
+
+            val subSerialName = descriptor.getElementName(i)
+            val subDescriptor = descriptor.getElementDescriptor(i)
+            val subIsOptional = descriptor.isElementOptional(i)
+            val subSchema = calculateSchema(subDescriptor)
 
             DataSubInfo(
-                name = subName,
+                serialName = subSerialName,
                 isOptional = subIsOptional,
                 type = {
-                    put("title", subName)
                     subSchema.type.invoke(this)
                     putAll(subOptionDocs)
                 },
                 additionalTypes = subSchema.additionalTypes,
                 immediateProperties = subSchema.immediateProperties
-                    .mapKeys { "${subName}.${it.key}" },
+                    .mapKeys { "${subSerialName}.${it.key}" },
             )
         }
 
         val additionalType: JsonObjectBuilder.() -> Unit = {
             put("type", "object")
-            put("title", ref)
+            put("title", title)
             put("additionalProperties", false)
             putAll(optionDocs)
 
             putJsonObject("properties") {
-                if (discriminator != null) {
-                    putJsonObject("type") {
-                        put("const", discriminator)
-                    }
-                }
-
                 subInfoList.forEach { subInfo ->
-                    putJsonObject(subInfo.name) {
+                    putJsonObject(subInfo.serialName) {
                         subInfo.type(this)
                     }
-                    subInfo.immediateProperties.map { (name, type) ->
-                        putJsonObject(name) {
-                            type()
+                    subInfo.immediateProperties.map { (subSubSerialName, subSubType) ->
+                        putJsonObject(subSubSerialName) {
+                            subSubType()
                             put("x-is-dot-sc", true)
                         }
                     }
@@ -226,45 +319,31 @@ internal fun calculateSchema(kType: KType): SchemaResult {
             putJsonArray("required") {
                 subInfoList.forEach { subInfo ->
                     if (!subInfo.isOptional)
-                        add(subInfo.name)
+                        add(subInfo.serialName)
                 }
             }
         }
 
         return SchemaResult(
-            type = {
-                put($$"$ref", $$"#/$defs/$$ref")
-            },
+            type = { put($$"$ref", $$"#/$defs/$$defRef") },
+            serialName = serialName,
             additionalTypes = buildMap {
-                put(ref, additionalType)
+                put(defRef, additionalType)
                 subInfoList.forEach { subInfo ->
                     putAll(subInfo.additionalTypes)
                 }
             },
             immediateProperties = buildMap {
                 subInfoList.forEach { subInfo ->
-                    put(subInfo.name, subInfo.type)
+                    put(subInfo.serialName, subInfo.type)
                     putAll(subInfo.immediateProperties)
                 }
             }
         )
     }
 
-    error("Couldn't build schema for type: $kType")
-}
-
-private fun KClass<*>.identifyingName(): String {
-    return jvmName.substringAfterLast('.').replace('$', '.')
-}
-
-private fun KClass<*>.enumEntries(): EnumEntries<*> {
-    require(isSubclassOf(Enum::class)) { "Class is not an enum class: $this" }
-    return staticProperties.single { it.name == "entries" }
-        .javaGetter!!.invoke(null) as EnumEntries<*>
-}
-
-private inline fun <reified T : Annotation> Enum<*>.findAnnotation(): T? {
-    return this.declaringJavaClass.getField(this.name).getAnnotation(T::class.java)
+    // Unhandled: PolymorphicKind.OPEN, SerialKind.CONTEXTUAL
+    error("Couldn't build schema for type: ${descriptor.serialName}")
 }
 
 private fun JsonObjectBuilder.putAll(docs: List<OptionDoc>) {
@@ -273,4 +352,43 @@ private fun JsonObjectBuilder.putAll(docs: List<OptionDoc>) {
             .decodeFromString<JsonObject>(doc.value)
             .forEach { put(it.key, it.value) }
     }
+}
+
+private fun SerialDescriptor.obtainOptionRef() = annotations.find { it is OptionRef } as OptionRef?
+private fun SerialDescriptor.obtainOptionDocList() = annotations.filterIsInstance<OptionDoc>()
+private fun SerialDescriptor.obtainElementOptionDocList(i: Int) = getElementAnnotations(i).filterIsInstance<OptionDoc>()
+
+@OptIn(ExperimentalSerializationApi::class)
+private fun SerialDescriptor.obtainJsonClassDiscriminator() =
+    annotations.find { it is JsonClassDiscriminator } as JsonClassDiscriminator?
+
+private fun SerialDescriptor.simpleClassNameOrNull(): String? {
+    try {
+        Class.forName(serialName)
+        return serialName.substringAfterLast('.')
+    } catch (_: ClassNotFoundException) {
+        val builder = StringBuilder(serialName)
+
+        (serialName.lastIndex downTo 1).forEach { i ->
+            if (builder[i] == '.') {
+                builder[i] = '$'
+
+                try {
+                    Class.forName(builder.toString())
+                    ((i - 1) downTo 1).forEach { j ->
+                        if (serialName[j] == '.')
+                            return serialName.substring(j + 1)
+                    }
+                    return serialName
+                } catch (_: ClassNotFoundException) {
+                }
+            }
+        }
+    }
+    return null
+}
+
+private fun SerialDescriptor.md5Id(): String {
+    val bytes = MessageDigest.getInstance("MD5").digest("${hashCode()}${toString()}".toByteArray())
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 }

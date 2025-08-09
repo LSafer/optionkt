@@ -1,21 +1,31 @@
 package net.lsafer.optionkt
 
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerialInfo
+import kotlinx.serialization.descriptors.serialDescriptor
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import net.lsafer.optionkt.internal.*
 import org.intellij.lang.annotations.Language
-import kotlin.reflect.typeOf
 
-@Repeatable
+@OptIn(ExperimentalSerializationApi::class)
+@SerialInfo
 @Retention(AnnotationRetention.RUNTIME)
-@Target(AnnotationTarget.CLASS, AnnotationTarget.VALUE_PARAMETER)
+@Target(AnnotationTarget.CLASS)
+annotation class OptionRef(val value: String)
+
+@OptIn(ExperimentalSerializationApi::class)
+@Repeatable
+@SerialInfo
+@Retention(AnnotationRetention.RUNTIME)
+@Target(AnnotationTarget.CLASS, AnnotationTarget.VALUE_PARAMETER, AnnotationTarget.TYPE)
 annotation class OptionDoc(
     @Language("JavaScript", prefix = "_(", suffix = ")")
     val value: String
 )
 
 inline fun <reified T> createOptionSchemaObject(): JsonObject {
-    return calculateSchema(typeOf<T>()).toSchemaObject()
+    return calculateSchema(serialDescriptor<T>()).toSchemaObject()
 }
 
 fun mergeOptionSource(vararg options: Map<String, String?>): Map<String, String> {
