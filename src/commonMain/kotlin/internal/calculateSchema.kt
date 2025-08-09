@@ -40,6 +40,7 @@ internal fun calculateSchema(kType: KType): SchemaResult {
     if (kClass == JsonObject::class) return SchemaResult({ put("type", "object") })
     if (kClass == JsonArray::class) return SchemaResult({ put("type", "array") })
     if (kClass == String::class) return SchemaResult({ put("type", "string") })
+    if (kClass == Regex::class) return SchemaResult({ put("type", "string") })
     if (kClass == Boolean::class) return SchemaResult({ put("type", "boolean") })
     if (kClass.isSubclassOf(Number::class)) return SchemaResult({ put("type", "number") })
 
@@ -58,7 +59,7 @@ internal fun calculateSchema(kType: KType): SchemaResult {
         )
     }
 
-    if (kClass.isSubclassOf(List::class)) {
+    if (kClass.isSubclassOf(List::class) || kClass.isSubclassOf(Set::class)) {
         val subKType = kType.arguments[0].type!!
         val subSchema = calculateSchema(subKType)
 
