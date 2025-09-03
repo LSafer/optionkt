@@ -32,23 +32,23 @@ fun mergeOptionSource(vararg options: Map<String, String?>): Map<String, String>
     return buildMap { for (m in options) for ((k, v) in m) if (v != null) put(k, v) }
 }
 
-@InternalOptionktApi
+@OptIn(InternalOptionktApi::class)
 fun flattenOptionSource(options: JsonObject): Map<String, String> {
     return buildMap { flatten(options, out = this, path = "") }
 }
 
-@InternalOptionktApi
+@OptIn(InternalOptionktApi::class)
 fun unflattenOptionSource(options: Map<String, String>): JsonObject {
     return unflatten(options, path = "")
 }
 
-@InternalOptionktApi
+@OptIn(InternalOptionktApi::class)
 fun String.decodeJsonOptionSource(): Map<String, String> {
     val jsonObject = LenientJsonFormat.decodeFromString<JsonObject>(this)
     return flattenOptionSource(jsonObject)
 }
 
-@InternalOptionktApi
+@OptIn(InternalOptionktApi::class)
 inline fun <reified T> compileOptionSource(
     vararg options: Map<String, String?>,
     format: Json = LenientJsonFormat,
