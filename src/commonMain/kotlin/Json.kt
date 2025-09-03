@@ -5,8 +5,10 @@ import kotlinx.serialization.json.JsonObject
 import net.lsafer.optionkt.internal.LenientJsonFormat
 import net.lsafer.optionkt.internal.flatten
 import net.lsafer.optionkt.internal.unflatten
+import kotlin.jvm.JvmName
 
 @OptIn(InternalOptionktApi::class)
+@JvmName("flattenOptionSource_old")
 @Deprecated("Use the extension function instead.", ReplaceWith("options.flattenOptionSource()"))
 fun flattenOptionSource(options: JsonObject) = options.flattenOptionSource()
 
@@ -16,6 +18,7 @@ fun JsonObject.flattenOptionSource(): Map<String, String> {
 }
 
 @OptIn(InternalOptionktApi::class)
+@JvmName("unflattenOptionSource_old")
 @Deprecated("Use the extension function instead.", ReplaceWith("options.unflattenOptionSource()"))
 fun unflattenOptionSource(options: Map<String, String>) = options.unflattenOptionSource()
 
