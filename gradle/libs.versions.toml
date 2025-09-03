@@ -8,5 +8,6 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 
 [libraries]
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+jetbrains-annotations = { module = "org.jetbrains:annotations", version = "26.0.2-1" }
 
 mamoe-yamlkt = { module = "net.mamoe.yamlkt:yamlkt", version = "0.13.0" }

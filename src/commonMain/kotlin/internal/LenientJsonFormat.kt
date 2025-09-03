@@ -2,10 +2,11 @@ package net.lsafer.optionkt.internal
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
+import net.lsafer.optionkt.InternalOptionktApi
 
 @OptIn(ExperimentalSerializationApi::class)
-@PublishedApi
-internal val LenientJsonFormat = Json {
+@InternalOptionktApi
+val LenientJsonFormat = Json {
     isLenient = true
     allowSpecialFloatingPointValues = true
     allowTrailingComma = true

@@ -4,12 +4,12 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.json.*
+import net.lsafer.optionkt.InternalOptionktApi
 import net.lsafer.optionkt.OptionDoc
 import net.lsafer.optionkt.OptionRef
 import java.security.MessageDigest
 import java.util.*
 
-@PublishedApi
 internal data class SchemaResult(
     val type: JsonObjectBuilder.() -> Unit,
     val serialName: String? = null,
@@ -17,7 +17,6 @@ internal data class SchemaResult(
     val immediateProperties: Map<String, JsonObjectBuilder.() -> Unit> = emptyMap(),
 )
 
-@PublishedApi
 internal fun SchemaResult.toSchemaObject(): JsonObject {
     return buildJsonObject {
         type.invoke(this)
@@ -33,7 +32,6 @@ internal fun SchemaResult.toSchemaObject(): JsonObject {
 }
 
 @OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
-@PublishedApi
 internal fun calculateSchema(descriptor: SerialDescriptor): SchemaResult {
     if (descriptor.isNullable) {
         val subDescriptor = descriptor.nonNullOriginal
@@ -346,6 +344,7 @@ internal fun calculateSchema(descriptor: SerialDescriptor): SchemaResult {
     error("Couldn't build schema for type: ${descriptor.serialName}")
 }
 
+@OptIn(InternalOptionktApi::class)
 private fun JsonObjectBuilder.putAll(docs: List<OptionDoc>) {
     docs.forEach { doc ->
         LenientJsonFormat

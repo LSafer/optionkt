@@ -1,9 +1,10 @@
 package net.lsafer.optionkt.internal
 
 import kotlinx.serialization.json.*
+import net.lsafer.optionkt.InternalOptionktApi
 
-@PublishedApi
-internal fun flatten(map: JsonObject, out: MutableMap<String, String>, path: String) {
+@InternalOptionktApi
+fun flatten(map: JsonObject, out: MutableMap<String, String>, path: String) {
     val prefix = if (path.isEmpty()) "" else "$path."
     for ((name, value) in map) when (value) {
         is JsonObject -> flatten(value, out, "$prefix$name")
@@ -12,8 +13,8 @@ internal fun flatten(map: JsonObject, out: MutableMap<String, String>, path: Str
     }
 }
 
-@PublishedApi
-internal fun unflatten(map: Map<String, String>, path: String): JsonObject {
+@InternalOptionktApi
+fun unflatten(map: Map<String, String>, path: String): JsonObject {
     val prefix = if (path.isEmpty()) "" else "$path."
     val names = map.entries.asSequence()
         .filter { it.key.startsWith(prefix) }

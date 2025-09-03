@@ -5,6 +5,7 @@ import net.lsafer.optionkt.internal.toJsonObject
 import net.mamoe.yamlkt.Yaml
 import net.mamoe.yamlkt.YamlMap
 
+@OptIn(InternalOptionktApi::class)
 fun flattenOptionSource(options: YamlMap): Map<String, String> {
     return buildMap { flatten(options.toJsonObject(), out = this, path = "") }
 }
