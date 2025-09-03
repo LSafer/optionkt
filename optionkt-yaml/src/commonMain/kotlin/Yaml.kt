@@ -7,7 +7,12 @@ import net.mamoe.yamlkt.YamlMap
 
 @OptIn(InternalOptionktApi::class)
 fun flattenOptionSource(options: YamlMap): Map<String, String> {
-    return buildMap { flatten(options.toJsonObject(), out = this, path = "") }
+    return options.flattenOptionSource()
+}
+
+@OptIn(InternalOptionktApi::class)
+fun YamlMap.flattenOptionSource(): Map<String, String> {
+    return buildMap { flatten(this@flattenOptionSource.toJsonObject(), out = this, path = "") }
 }
 
 fun String.decodeYamlOptionSource(): Map<String, String> {

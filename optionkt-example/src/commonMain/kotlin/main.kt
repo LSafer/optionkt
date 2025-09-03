@@ -46,13 +46,13 @@ fun main() {
     val src0 = "{opt: 1}".decodeJsonOptionSource()
     val src1 = "opt: 1".decodeYamlOptionSource()
     val obj2 = buildJsonObject { put("opt", 1) }
-    val src2 = flattenOptionSource(obj2)
+    val src2 = obj2.flattenOptionSource()
     val src3 = mutableMapOf<String, String?>("opt" to "1")
 
     // compile manual
     run {
         val mergedSrc: Map<String, String> = mergeOptionSource(src0, src1, src2, src3)
-        val resultObj: JsonObject = unflattenOptionSource(mergedSrc)
+        val resultObj: JsonObject = mergedSrc.unflattenOptionSource()
         val options = Json.decodeFromJsonElement<MyOptions>(resultObj)
     }
 
